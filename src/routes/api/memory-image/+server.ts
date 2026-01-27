@@ -19,10 +19,6 @@ interface OpenRouterImageResponse {
 }
 
 export const POST: RequestHandler = async ({ request }) => {
-	// #region agent log
-	fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: '+server.ts:POST:entry', message: 'API endpoint hit', data: { whisperBaseUrl: WHISPER_BASE_URL }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'B' }) }).catch(() => { });
-	// #endregion
-
 	// 1. Parse audio from form data
 	const formData = await request.formData();
 	const audioFile = formData.get('audio');
@@ -83,9 +79,6 @@ export const POST: RequestHandler = async ({ request }) => {
 				modalities: ['image', 'text']
 			})
 		}).then(async (res) => {
-			// #region agent log
-			fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: '+server.ts:POST:imageGenResponse', message: 'OpenRouter responded', data: { status: res.status, ok: res.ok }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'F' }) }).catch(() => { });
-			// #endregion
 			if (!res.ok) {
 				const text = await res.text();
 				throw new Error(`OpenRouter error (${res.status}): ${text}`);
@@ -96,17 +89,11 @@ export const POST: RequestHandler = async ({ request }) => {
 	);
 
 	if (imageResult.isErr()) {
-		// #region agent log
-		fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: '+server.ts:POST:imageGenError', message: 'Image generation failed', data: { error: imageResult.error }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'F' }) }).catch(() => { });
-		// #endregion
 		error(502, { message: imageResult.error });
 	}
 
 	const imageData = imageResult.value.choices[0]?.message?.images?.[0]?.image_url?.url;
 	if (!imageData) {
-		// #region agent log
-		fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: '+server.ts:POST:noImageInResponse', message: 'No image in response', data: { choices: JSON.stringify(imageResult.value.choices).substring(0, 500) }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'F' }) }).catch(() => { });
-		// #endregion
 		error(502, { message: 'No image returned from OpenRouter' });
 	}
 
@@ -114,10 +101,6 @@ export const POST: RequestHandler = async ({ request }) => {
 	const [header, base64Data] = imageData.split(',');
 	const mimeMatch = header?.match(/data:([^;]+)/);
 	const mimeType = mimeMatch?.[1] || 'image/png';
-
-	// #region agent log
-	fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: '+server.ts:POST:success', message: 'Returning successful response', data: { mimeType, base64Length: base64Data?.length }, timestamp: Date.now(), sessionId: 'debug-session', hypothesisId: 'F' }) }).catch(() => { });
-	// #endregion
 
 	// 5. Return result
 	return json({
