@@ -9,6 +9,7 @@ import { join } from 'path';
 
 const WHISPER_BASE_URL = env.WHISPER_BASE_URL || 'http://127.0.0.1:8000';
 const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY;
+const OPENROUTER_IMAGE_MODEL = env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3-pro-image-preview';
 
 interface OpenRouterImageResponse {
 	choices: Array<{
@@ -76,7 +77,7 @@ export const POST: RequestHandler = async ({ request }) => {
 				Authorization: `Bearer ${OPENROUTER_API_KEY}`
 			},
 			body: JSON.stringify({
-				model: 'google/gemini-3-pro-image-preview',
+				model: OPENROUTER_IMAGE_MODEL,
 				messages: [{ role: 'user', content: prompt }],
 				modalities: ['image', 'text']
 			})
