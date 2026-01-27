@@ -52,7 +52,18 @@
 		formData.append('audio', audioBlob, 'recording.webm');
 
 		// #region agent log
-		fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'+page.svelte:processAudio:entry',message:'Starting processAudio',data:{audioBlobSize:audioBlob.size,audioBlobType:audioBlob.type},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,D'})}).catch(()=>{});
+		fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				location: '+page.svelte:processAudio:entry',
+				message: 'Starting processAudio',
+				data: { audioBlobSize: audioBlob.size, audioBlobType: audioBlob.type },
+				timestamp: Date.now(),
+				sessionId: 'debug-session',
+				hypothesisId: 'B,D'
+			})
+		}).catch(() => {});
 		// #endregion
 
 		try {
@@ -62,16 +73,42 @@
 			});
 
 			// #region agent log
-			fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'+page.svelte:processAudio:response',message:'Received API response',data:{status:res.status,statusText:res.statusText,ok:res.ok,url:res.url},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'B,E'})}).catch(()=>{});
+			fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					location: '+page.svelte:processAudio:response',
+					message: 'Received API response',
+					data: { status: res.status, statusText: res.statusText, ok: res.ok, url: res.url },
+					timestamp: Date.now(),
+					sessionId: 'debug-session',
+					hypothesisId: 'B,E'
+				})
+			}).catch(() => {});
 			// #endregion
 
 			if (!res.ok) {
 				const text = await res.text();
 				// #region agent log
-				fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'+page.svelte:processAudio:errorBody',message:'Response not ok - raw body',data:{status:res.status,rawBody:text.substring(0,500)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+				fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						location: '+page.svelte:processAudio:errorBody',
+						message: 'Response not ok - raw body',
+						data: { status: res.status, rawBody: text.substring(0, 500) },
+						timestamp: Date.now(),
+						sessionId: 'debug-session',
+						hypothesisId: 'E'
+					})
+				}).catch(() => {});
 				// #endregion
 				let data;
-				try { data = JSON.parse(text); } catch { data = { message: text }; }
+				try {
+					data = JSON.parse(text);
+				} catch {
+					data = { message: text };
+				}
 				throw new Error(data.message || 'Request failed');
 			}
 
@@ -82,7 +119,18 @@
 			mediaType = data.mediaType;
 		} catch (err) {
 			// #region agent log
-			fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'+page.svelte:processAudio:catch',message:'Caught error',data:{errorMsg:err instanceof Error ? err.message : String(err)},timestamp:Date.now(),sessionId:'debug-session',hypothesisId:'E'})}).catch(()=>{});
+			fetch('http://127.0.0.1:7245/ingest/d7115a44-5141-4c52-809e-dc7db53678d4', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					location: '+page.svelte:processAudio:catch',
+					message: 'Caught error',
+					data: { errorMsg: err instanceof Error ? err.message : String(err) },
+					timestamp: Date.now(),
+					sessionId: 'debug-session',
+					hypothesisId: 'E'
+				})
+			}).catch(() => {});
 			// #endregion
 			errorMessage = err instanceof Error ? err.message : 'Something went wrong';
 		} finally {
@@ -90,6 +138,8 @@
 		}
 	}
 </script>
+
+<title>Flüsterungen</title>
 
 <main class="flex min-h-screen flex-col md:flex-row">
 	<!-- Left Column -->

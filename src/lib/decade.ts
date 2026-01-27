@@ -4,13 +4,13 @@ export const SUPPORTED_DECADES = [1940, 1950, 1960, 1970, 1980, 1990, 2000] as c
 export type Decade = (typeof SUPPORTED_DECADES)[number];
 
 export const decadeStyleMap: Record<Decade, string> = {
-	1940: 'sepia-toned, vintage 1940s aesthetic, wartime era, soft grain, nostalgic film photography style',
-	1950: '1950s retro style, pastel colors, mid-century modern aesthetic, Kodachrome film look',
-	1960: '1960s pop art influence, vibrant colors, mod aesthetic, psychedelic undertones',
-	1970: '1970s warm tones, earthy colors, disco era glow, vintage film grain, golden hour lighting',
-	1980: '1980s neon aesthetic, synthwave colors, VHS style, bright contrasts, retro-futuristic',
-	1990: '1990s grunge aesthetic, muted tones, film photography style, candid snapshot feel',
-	2000: 'early 2000s digital camera aesthetic, slightly oversaturated, millennial nostalgia'
+	1940: 'authentic 1940s black-and-white photography, period-accurate clothing and settings, natural soft lighting, documentary style, slight film grain',
+	1950: 'authentic 1950s Kodachrome photography, period-accurate fashion and interiors, natural daylight, realistic colors typical of the era',
+	1960: 'authentic 1960s photography, period-accurate fashion and settings, natural lighting, realistic documentary style, slight color shift typical of era film stock',
+	1970: 'authentic 1970s photography, warm color temperature, period-accurate fashion and interiors, natural lighting, realistic Kodak film look',
+	1980: 'authentic 1980s photography, period-accurate fashion and settings, natural lighting, realistic film photography style, candid documentary feel',
+	1990: 'authentic 1990s photography, period-accurate fashion and technology, natural lighting, realistic film or early digital camera look, candid snapshot style',
+	2000: 'authentic early 2000s photography, period-accurate fashion and technology, natural lighting, realistic digital camera quality of the era'
 };
 
 /**

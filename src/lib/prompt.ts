@@ -5,5 +5,11 @@ import { type Decade, decadeStyleMap } from './decade';
  */
 export function buildImagePrompt(memory: string, decade: Decade) {
 	const style = decadeStyleMap[decade];
-	return `A nostalgic scene depicting: ${memory}. Style: ${style}. High quality, detailed, evocative of personal memories.`;
+	return `Create a photorealistic image of this scene: ${memory}
+
+CRITICAL: Do NOT include any text, words, letters, numbers, captions, titles, watermarks, or typography anywhere in the image. The image must be purely visual with no written elements.
+
+Visual style: ${style}
+
+The image should look like an authentic photograph from the ${decade}s era. Keep it hyper realism!`;
 }
