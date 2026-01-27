@@ -4,6 +4,8 @@ import { fromPromise } from 'neverthrow';
 import { extractDecade } from '$lib/decade';
 import { buildImagePrompt } from '$lib/prompt';
 import { env } from '$env/dynamic/private';
+import { writeFileSync, mkdirSync, existsSync } from 'fs';
+import { join } from 'path';
 
 const WHISPER_BASE_URL = env.WHISPER_BASE_URL || 'http://127.0.0.1:8000';
 const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY;
@@ -102,7 +104,15 @@ export const POST: RequestHandler = async ({ request }) => {
 	const mimeMatch = header?.match(/data:([^;]+)/);
 	const mimeType = mimeMatch?.[1] || 'image/png';
 
-	// 5. Return result
+	// 5. Save image to gallery
+	const galleryDir = join(process.cwd(), 'static', 'gallery');
+	if (!existsSync(galleryDir)) mkdirSync(galleryDir, { recursive: true });
+
+	const filename = `${Date.now()}.png`;
+	const filepath = join(galleryDir, filename);
+	writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+
+	// 6. Return result
 	return json({
 		transcript,
 		decade,

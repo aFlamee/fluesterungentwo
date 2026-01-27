@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
+
 	let isRecording = $state(false);
 	let isLoading = $state(false);
 	let transcript = $state('');
@@ -6,9 +8,20 @@
 	let imageBase64 = $state('');
 	let mediaType = $state('');
 	let errorMessage = $state('');
+	let galleryImages = $state<string[]>([]);
+	let modalImage = $state<string | null>(null);
 
 	let mediaRecorder: MediaRecorder | null = null;
 	let audioChunks: Blob[] = [];
+
+	async function loadGallery() {
+		const res = await fetch('/api/gallery');
+		if (res.ok) galleryImages = await res.json();
+	}
+
+	onMount(() => {
+		loadGallery();
+	});
 
 	async function startRecording() {
 		errorMessage = '';
@@ -73,6 +86,7 @@
 			decade = data.decade;
 			imageBase64 = data.imageBase64;
 			mediaType = data.mediaType;
+			await loadGallery();
 		} catch (err) {
 			errorMessage = err instanceof Error ? err.message : 'Something went wrong';
 		} finally {
@@ -141,3 +155,49 @@
 		{/if}
 	</section>
 </main>
+
+<!-- Gallery Section -->
+{#if galleryImages.length > 0}
+	<section class="bg-white/20 px-8 py-16">
+		<h2 class="mb-8 text-center text-3xl font-bold">Your Memories</h2>
+		<div class="mx-auto grid max-w-6xl grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4">
+			{#each galleryImages as src}
+				<button type="button" onclick={() => (modalImage = src)} class="cursor-pointer">
+					<img
+						{src}
+						alt="Memory"
+						class="aspect-square w-full rounded-lg object-cover shadow-md transition-transform hover:scale-105"
+					/>
+				</button>
+			{/each}
+		</div>
+	</section>
+{/if}
+
+<!-- Polaroid Modal -->
+{#if modalImage}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+		onclick={() => (modalImage = null)}
+		onkeydown={(e) => e.key === 'Escape' && (modalImage = null)}
+		role="button"
+		tabindex="0"
+	>
+		<div
+			class="rotate-2 transform bg-white p-4 pb-16 shadow-2xl transition-transform"
+			onclick={(e) => e.stopPropagation()}
+			onkeydown={(e) => e.stopPropagation()}
+			role="dialog"
+			tabindex="-1"
+		>
+			<img src={modalImage} alt="Memory" class="max-h-[70vh] max-w-[80vw] object-contain" />
+		</div>
+		<button
+			type="button"
+			class="absolute right-6 top-6 text-4xl text-white hover:text-gray-300"
+			onclick={() => (modalImage = null)}
+		>
+			&times;
+		</button>
+	</div>
+{/if}
