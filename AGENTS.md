@@ -1,23 +1,26 @@
-You are able to use the Svelte MCP server, where you have access to comprehensive Svelte 5 and SvelteKit documentation. Here's how to use the available tools effectively:
+# Flüsterungen
 
-## Available MCP Tools:
+Voice-to-image app that generates decade-styled images from spoken memories using local Whisper and Seedream 4.5.
 
-### 1. list-sections
+## Essentials
 
-Use this FIRST to discover all available documentation sections. Returns a structured list with titles, use_cases, and paths.
-When asked about Svelte or SvelteKit topics, ALWAYS use this tool at the start of the chat to find relevant sections.
+- **Package manager:** pnpm
+- **Commands:** `pnpm check` | `pnpm format` | `pnpm lint`
+- **Stack:** SvelteKit, Svelte 5, TypeScript, Tailwind v4, Vercel AI SDK
+- **Error handling:** neverthrow
+- **No explicit return types** unless necessary
+- **No unit tests** unless explicitly requested
 
-### 2. get-documentation
+## Documentation Tools
 
-Retrieves full documentation content for specific sections. Accepts single or multiple sections.
-After calling the list-sections tool, you MUST analyze the returned documentation sections (especially the use_cases field) and then use the get-documentation tool to fetch ALL documentation sections that are relevant for the user's task.
+1. **btca** (priority) — Query local repo clones for up-to-date framework docs. See [btca reference](docs/agents/btca.md)
+2. **Svelte MCP server** (fallback) — For Svelte-specific queries. See [MCP Svelte reference](docs/agents/mcp-svelte.md)
 
-### 3. svelte-autofixer
+## Detailed Guidelines
 
-Analyzes Svelte code and returns issues and suggestions.
-You MUST use this tool whenever writing Svelte code before sending it to the user. Keep calling it until no issues or suggestions are returned.
-
-### 4. playground-link
-
-Generates a Svelte Playground link with the provided code.
-After completing the code, ask the user if they want a playground link. Only call this tool after user confirmation and NEVER if code was written to files in their project.
+| Topic | File |
+|-------|------|
+| Svelte 5 | [.cursor/rules/svelte.mdc](.cursor/rules/svelte.mdc) |
+| Tailwind v4 | [.cursor/rules/tailwindcss.mdc](.cursor/rules/tailwindcss.mdc) |
+| neverthrow | [.cursor/rules/neverthrow.mdc](.cursor/rules/neverthrow.mdc) |
+| Convex | [.cursor/rules/convex.mdc](.cursor/rules/convex.mdc) |
