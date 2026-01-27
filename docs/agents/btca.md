@@ -47,18 +47,18 @@ btca clear
 
 ## Config Locations
 
-| Location | Purpose |
-|----------|---------|
-| `~/.config/btca/btca.config.jsonc` | Global config |
-| `./btca.config.jsonc` | Project config (overrides global) |
+| Location                           | Purpose                           |
+| ---------------------------------- | --------------------------------- |
+| `~/.config/btca/btca.config.jsonc` | Global config                     |
+| `./btca.config.jsonc`              | Project config (overrides global) |
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
+| Problem                   | Solution                            |
+| ------------------------- | ----------------------------------- |
 | "No resources configured" | Run `btca config resources add ...` |
-| "Provider not connected" | Run `opencode auth` |
-| Stale/corrupted cache | Run `btca clear` |
+| "Provider not connected"  | Run `opencode auth`                 |
+| Stale/corrupted cache     | Run `btca clear`                    |
 
 ---
 

@@ -4,10 +4,10 @@ overview: Build a minimal local-only SvelteKit app that records speech, transcri
 todos:
   - id: deps-env
     content: Add OpenRouter provider dep + .env.example keys
-    status: in_progress
+    status: completed
   - id: server-apis
     content: Implement transcribe + generate API endpoints
-    status: pending
+    status: in_progress
   - id: ui-flow
     content: Build 2-column UI + wire flow + decade parsing
     status: pending
@@ -42,7 +42,7 @@ UI-->>User: render image
 
 ### Tasks
 
-1) Dependencies + env template
+1. Dependencies + env template
 
 - Add `@ai-sdk/openai-compatible` (AI SDK already present) via pnpm
 - Create `.env.example` with:
@@ -54,19 +54,19 @@ UI-->>User: render image
   - `WHISPER_LANGUAGE=de`
   - `WHISPER_BIN=whisper`
 
-2) Server-only provider setup
+2. Server-only provider setup
 
 - Add server-only helper, e.g. [`src/lib/server/openrouter.ts`](src/lib/server/openrouter.ts): create provider with `createOpenAICompatible`, image model `bytedance-seed/seedream-4.5`
 - Use `$env/static/private` or `$env/dynamic/private` for keys
 
-3) Transcription endpoint (local Whisper)
+3. Transcription endpoint (local Whisper)
 
 - Add [`src/routes/api/transcribe/+server.ts`](src/routes/api/transcribe/+server.ts)
 - Accept `multipart/form-data` with audio blob
 - Save temp file, run `whisper <file> --model turbo --language de`, parse transcript
 - Wrap errors via `neverthrow` and return JSON `{ text }`
 
-4) Image generation endpoint
+4. Image generation endpoint
 
 - Add [`src/routes/api/generate/+server.ts`](src/routes/api/generate/+server.ts)
 - Accept JSON `{ memoryText, decade }`
@@ -74,13 +74,13 @@ UI-->>User: render image
 - Call `generateImage` with Seedream model via OpenRouter
 - Return JSON `{ imageBase64 }`
 
-5) Decade parsing
+5. Decade parsing
 
 - Add helper in [`src/lib/decade.ts`](src/lib/decade.ts):
   - Parse `1940–2000`, `1940er`, `40er`, optional German words
   - Validate supported range; return `Result<Decade,Error>`
 
-6) UI (minimal, 2-column)
+6. UI (minimal, 2-column)
 
 - Update [`src/routes/+page.svelte`](src/routes/+page.svelte)
 - Left: title + record button + status text
@@ -88,12 +88,12 @@ UI-->>User: render image
 - Beige background + coffee-brown text via Tailwind v4
 - Use Svelte 5 runes (`$state`) for status, transcript, image
 
-7) Wiring flow
+7. Wiring flow
 
 - Client flow: record → `/api/transcribe` → parse decade → `/api/generate` → render image
 - Show loading/error states; disable button while running
 
-8) Sanity checks (optional)
+8. Sanity checks (optional)
 
 - `pnpm check` and `pnpm lint` after edits
 

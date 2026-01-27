@@ -4,7 +4,9 @@
 	"version": "0.0.1",
 	"type": "module",
 	"scripts": {
-		"dev": "vite dev",
+		"dev": "concurrently -n svelte,whisper -c blue,yellow \"vite dev\" \"cd services/whisper && .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 --reload\"",
+		"dev:svelte": "vite dev",
+		"whisper:dev": "cd services/whisper && .venv/bin/uvicorn server:app --host 0.0.0.0 --port 8000 --reload",
 		"build": "vite build",
 		"preview": "vite preview",
 		"prepare": "svelte-kit sync || echo ''",
@@ -38,6 +40,8 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
+		"@ai-sdk/openai-compatible": "^2.0.21",
+		"ai": "^6.0.55",
 		"neverthrow": "^8.2.0",
 		"runed": "^0.37.1",
 		"zod": "^4.3.6"

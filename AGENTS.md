@@ -18,9 +18,9 @@ Voice-to-image app that generates decade-styled images from spoken memories usin
 
 ## Detailed Guidelines
 
-| Topic | File |
-|-------|------|
-| Svelte 5 | [.cursor/rules/svelte.mdc](.cursor/rules/svelte.mdc) |
+| Topic       | File                                                           |
+| ----------- | -------------------------------------------------------------- |
+| Svelte 5    | [.cursor/rules/svelte.mdc](.cursor/rules/svelte.mdc)           |
 | Tailwind v4 | [.cursor/rules/tailwindcss.mdc](.cursor/rules/tailwindcss.mdc) |
-| neverthrow | [.cursor/rules/neverthrow.mdc](.cursor/rules/neverthrow.mdc) |
-| Convex | [.cursor/rules/convex.mdc](.cursor/rules/convex.mdc) |
+| neverthrow  | [.cursor/rules/neverthrow.mdc](.cursor/rules/neverthrow.mdc)   |
+| Convex      | [.cursor/rules/convex.mdc](.cursor/rules/convex.mdc)           |
