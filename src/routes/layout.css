@@ -9,6 +9,6 @@
 }
 
 body {
-	background-color: var(--color-beige);
-	color: var(--color-coffee);
+	background-color: #000;
+	color: var(--color-beige);
 }

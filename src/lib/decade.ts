@@ -5,15 +5,15 @@ export const SUPPORTED_DECADES = [1940, 1950, 1960, 1970, 1980, 1990, 2000, 2010
 export type Decade = (typeof SUPPORTED_DECADES)[number];
 
 export const decadeStyleMap: Record<Decade, string> = {
-	1940: 'authentic 1940s black-and-white photography, wartime documentary feel, period-accurate clothing and settings, soft window light, high contrast, visible film grain',
-	1950: 'authentic 1950s black-and-white mid-century photography, silver gelatin print look, period-accurate fashion and interiors, clean contrast, subtle halation, fine grain',
-	1960: 'authentic 1960s black-and-white documentary photography, candid street style, period-accurate fashion and settings, punchy contrast, noticeable film grain',
-	1970: 'authentic 1970s color film photography, warm and slightly faded tones, period-accurate fashion and interiors, natural light, visible grain, classic Kodak color print look',
-	1980: 'authentic 1980s color film photography, slightly saturated colors, indoor tungsten and on-camera flash feel, period-accurate fashion and settings, candid snapshot style, visible grain',
-	1990: 'authentic 1990s color photography, consumer 35mm film or early digital feel, direct flash, cooler tones, period-accurate fashion and technology, candid snapshot look',
-	2000: 'authentic early 2000s digital photography, compact point-and-shoot look, lower dynamic range, slight compression, period-accurate fashion and technology',
-	2010: 'authentic 2010s digital photography, DSLR or smartphone look, crisp detail, natural lighting, period-accurate fashion and technology, candid lifestyle feel',
-	2020: 'authentic 2020s digital photography, high-resolution smartphone look, subtle HDR/computational clarity, contemporary fashion and technology, natural lighting, candid documentary feel'
+	1940: 'authentic 1940s black-and-white photography, wartime documentary feel, period-accurate clothing and settings, soft window light, high contrast, visible film grain, slight softness, minor framing imperfections',
+	1950: 'authentic 1950s black-and-white mid-century photography, silver gelatin print look, period-accurate fashion and interiors, clean contrast, subtle halation, fine grain, slight print texture, tiny focus falloff',
+	1960: 'authentic 1960s black-and-white documentary photography, candid street style, period-accurate fashion and settings, punchy contrast, noticeable film grain, slight softness, minor motion blur',
+	1970: 'authentic 1970s color film photography, warm and slightly faded tones, period-accurate fashion and interiors, natural light, visible grain, classic Kodak color print look, minor exposure variance, handheld snapshot feel',
+	1980: 'authentic 1980s color film photography, slightly saturated colors, indoor tungsten and on-camera flash feel, period-accurate fashion and settings, candid snapshot style, visible grain, slight softness, uneven focus',
+	1990: 'authentic 1990s color photography, consumer 35mm film or early digital feel, direct flash, cooler tones, period-accurate fashion and technology, candid snapshot look, mild noise, slight white balance shifts',
+	2000: 'authentic early 2000s digital photography, compact point-and-shoot look, lower dynamic range, slight compression artifacts, mild noise, minor motion blur, casual snapshot framing',
+	2010: 'authentic 2010s digital photography, DSLR or smartphone look, natural lighting, period-accurate fashion and technology, candid lifestyle feel, slight processing, mild noise, minor focus hunting',
+	2020: 'authentic 2020s digital photography, high-resolution smartphone look, natural lighting, contemporary fashion and technology, candid documentary feel, subtle processing, mild noise, slight exposure inconsistency'
 };
 
 /**
