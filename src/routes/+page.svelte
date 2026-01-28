@@ -214,7 +214,7 @@
 
 {#if isShowcasing}
 	<div class="fixed inset-0 z-50 flex items-center justify-center bg-black">
-		<img src={showcaseImage} alt="Generated memory" class="h-full w-full object-contain" />
+		<img src={showcaseImage} alt="Generated memory" class="h-full w-full object-cover" />
 	</div>
 {:else}
 	<main class="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center">
