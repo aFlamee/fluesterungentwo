@@ -162,12 +162,12 @@
 	}
 </script>
 
-<title>Flüsterungen</title>
+<title>Layers of memory</title>
 
 <main class="flex min-h-screen flex-col md:flex-row">
 	<!-- Left Column -->
 	<section class="flex flex-1 flex-col items-center justify-center p-8">
-		<h1 class="mb-4 text-4xl font-bold">Flüsterungen</h1>
+		<h1 class="mb-4 text-4xl font-bold">Layers of memory</h1>
 		<p class="mb-8 text-center text-lg opacity-80">
 			Share a memory from your past. Tell us the decade, and we'll bring it to life.
 		</p>

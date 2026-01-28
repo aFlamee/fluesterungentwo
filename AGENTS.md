@@ -1,4 +1,4 @@
-# Flüsterungen
+# Layers of memory
 
 Voice-to-image app that generates decade-styled images from spoken memories using local Whisper and Seedream 4.5.
 
