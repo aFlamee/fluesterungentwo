@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { fromPromise } from 'neverthrow';
+import { err, fromPromise, fromThrowable, ok } from 'neverthrow';
 import { extractDecade } from '$lib/decade';
 import { buildImagePrompt } from '$lib/prompt';
 import { env } from '$env/dynamic/private';
@@ -10,15 +10,338 @@ import { join } from 'path';
 const WHISPER_BASE_URL = env.WHISPER_BASE_URL || 'http://127.0.0.1:8000';
 const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY;
 const OPENROUTER_IMAGE_MODEL = env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3-pro-image-preview';
+const OPENROUTER_IMAGE_FALLBACK_MODEL = env.OPENROUTER_IMAGE_FALLBACK_MODEL;
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
+const RETRYABLE_ERROR_MARKERS = ['fetch failed', 'econnreset', 'etimedout', 'enotfound', 'eai_again', 'aborted'];
+const OPENROUTER_IMAGE_ATTEMPTS = boundedInt(env.OPENROUTER_IMAGE_ATTEMPTS, 2, 1, 4);
+const OPENROUTER_IMAGE_RETRY_DELAY_MS = boundedInt(
+	env.OPENROUTER_IMAGE_RETRY_DELAY_MS,
+	1200,
+	500,
+	5000
+);
+
+function boundedInt(value: string | undefined, fallback: number, min: number, max: number) {
+	const parsed = Number.parseInt(value ?? '', 10);
+	if (!Number.isFinite(parsed)) return fallback;
+	return Math.min(max, Math.max(min, parsed));
+}
+
+function logServer(event: string, details?: Record<string, unknown>) {
+	const payload = details ? ` ${JSON.stringify(details)}` : '';
+	console.info(`[memory-image] ${event}${payload}`);
+}
+
+function isRetryableError(message: string) {
+	const normalized = message.toLowerCase();
+	return RETRYABLE_ERROR_MARKERS.some((marker) => normalized.includes(marker));
+}
+
+async function sleep(ms: number) {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function fetchWithTimeout(input: RequestInfo, init: RequestInit, timeoutMs: number) {
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), timeoutMs);
+	try {
+		return await fetch(input, { ...init, signal: controller.signal });
+	} finally {
+		clearTimeout(timeout);
+	}
+}
+
+async function fetchWithRetry(
+	input: RequestInfo,
+	init: RequestInit,
+	{ timeoutMs, retries, retryDelayMs }: { timeoutMs: number; retries: number; retryDelayMs: number }
+) {
+	for (let attempt = 0; attempt <= retries; attempt += 1) {
+		logServer('fetch:attempt', {
+			url: typeof input === 'string' ? input : 'Request',
+			attempt: attempt + 1,
+			timeoutMs
+		});
+		const responseResult = await fromPromise(
+			fetchWithTimeout(input, init, timeoutMs),
+			(e) => (e instanceof Error ? e.message : 'Fetch failed')
+		);
+
+		if (responseResult.isErr()) {
+			if (attempt < retries && isRetryableError(responseResult.error)) {
+				await sleep(retryDelayMs * (attempt + 1));
+				continue;
+			}
+			return err(responseResult.error);
+		}
+
+		const response = responseResult.value;
+		if (!response.ok && RETRYABLE_STATUSES.has(response.status) && attempt < retries) {
+			await sleep(retryDelayMs * (attempt + 1));
+			continue;
+		}
+
+		return ok(response);
+	}
+
+	return err('Fetch failed');
+}
+
+async function resolveImageData(imageUrl: string) {
+	const trimmed = imageUrl.trim();
+	if (trimmed.startsWith('data:')) {
+		const [header, base64Data] = trimmed.split(',');
+		if (!base64Data) {
+			return err('Invalid image data returned from OpenRouter');
+		}
+		const mimeMatch = header?.match(/data:([^;]+)/);
+		const mimeType = mimeMatch?.[1] || 'image/png';
+		return ok({ base64Data, mimeType });
+	}
+
+	if (trimmed.startsWith('http')) {
+		const responseResult = await fetchWithRetry(
+			trimmed,
+			{ method: 'GET' },
+			{ timeoutMs: 20_000, retries: 2, retryDelayMs: 500 }
+		);
+
+		if (responseResult.isErr()) {
+			return err(responseResult.error);
+		}
+
+		const response = responseResult.value;
+		if (!response.ok) {
+			const text = await response.text();
+			return err(`Image fetch error (${response.status}): ${text}`);
+		}
+
+		const arrayBuffer = await response.arrayBuffer();
+		const mimeType = response.headers.get('content-type') || 'image/png';
+		const base64Data = Buffer.from(arrayBuffer).toString('base64');
+		return ok({ base64Data, mimeType });
+	}
+
+	if (/^[A-Za-z0-9+/=]+$/.test(trimmed)) {
+		return ok({ base64Data: trimmed, mimeType: 'image/png' });
+	}
+
+	return err('Unrecognized image data returned from OpenRouter');
+}
+
+type OpenRouterMessageContent =
+	| string
+	| Array<{
+		type?: string;
+		text?: string;
+		image_url?: { url?: string } | string;
+		url?: string;
+	}>;
+
+function imageUrlFromValue(value: { url?: string } | string | undefined) {
+	if (typeof value === 'string') return value;
+	return value?.url;
+}
+
+function extractImageUrlFromContent(content: OpenRouterMessageContent | undefined) {
+	if (!content) return null;
+	if (typeof content === 'string') {
+		const dataMatch = content.match(
+			/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/
+		);
+		if (dataMatch) return dataMatch[0];
+
+		const urlMatch = content.match(/https?:\/\/[^\s)"]+/);
+		return urlMatch?.[0] ?? null;
+	}
+
+	for (const part of content) {
+		const imageUrl = imageUrlFromValue(part.image_url) ?? part.url;
+		if (typeof imageUrl === 'string' && imageUrl.length > 0) return imageUrl;
+		if (typeof part.text === 'string') {
+			const dataMatch = part.text.match(
+				/data:image\/[a-zA-Z0-9.+-]+;base64,[A-Za-z0-9+/=]+/
+			);
+			if (dataMatch) return dataMatch[0];
+			const urlMatch = part.text.match(/https?:\/\/[^\s)"]+/);
+			if (urlMatch) return urlMatch[0];
+		}
+	}
+
+	return null;
+}
+
+function contentMeta(content: OpenRouterMessageContent | undefined) {
+	if (!content) return { contentType: 'missing' };
+	if (typeof content === 'string') {
+		const hasDataUrl = content.includes('data:image');
+		return {
+			contentType: 'string',
+			contentLength: content.length,
+			hasDataUrl,
+			preview: hasDataUrl ? undefined : content.slice(0, 160)
+		};
+	}
+	return {
+		contentType: 'array',
+		contentParts: content.length,
+		imageParts: content.filter((part) => Boolean(imageUrlFromValue(part.image_url) || part.url)).length
+	};
+}
+
+type OpenRouterImagePart = {
+	image_url?: { url?: string } | string;
+	url?: string;
+	b64_json?: string;
+	mime_type?: string;
+	type?: string;
+	data?: string;
+};
 
 interface OpenRouterImageResponse {
-	choices: Array<{
-		message: {
-			images?: Array<{
-				image_url: { url: string };
-			}>;
+	choices?: Array<{
+		message?: {
+			images?: OpenRouterImagePart[];
+			content?: OpenRouterMessageContent;
 		};
+		finish_reason?: string;
 	}>;
+	error?: {
+		message?: string;
+		code?: string | number;
+	};
+}
+
+function extractImageFromImages(images: OpenRouterImagePart[] | undefined) {
+	if (!images?.length) return null;
+	for (const image of images) {
+		if (!image) continue;
+		const directUrl = imageUrlFromValue(image.image_url) ?? image.url;
+		if (typeof directUrl === 'string' && directUrl.length > 0) return directUrl;
+		if (typeof image.b64_json === 'string' && image.b64_json.length > 0) return image.b64_json;
+		if (typeof image.data === 'string' && image.data.length > 0) return image.data;
+	}
+	return null;
+}
+
+function buildOpenRouterPrompt(prompt: string, attempt: number) {
+	if (attempt === 0) return prompt;
+	return `${prompt}\n\nReturn only an image. Do not respond with text.`;
+}
+
+async function requestOpenRouterImage(prompt: string, requestId: string) {
+	for (let attempt = 0; attempt < OPENROUTER_IMAGE_ATTEMPTS; attempt += 1) {
+		const model =
+			attempt > 0 && OPENROUTER_IMAGE_FALLBACK_MODEL
+				? OPENROUTER_IMAGE_FALLBACK_MODEL
+				: OPENROUTER_IMAGE_MODEL;
+		const promptForAttempt = buildOpenRouterPrompt(prompt, attempt);
+		logServer('openrouter:request', {
+			requestId,
+			attempt: attempt + 1,
+			model,
+			promptLength: promptForAttempt.length
+		});
+
+		const openRouterResponseResult = await fetchWithRetry(
+			OPENROUTER_URL,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${OPENROUTER_API_KEY}`
+				},
+				body: JSON.stringify({
+					model,
+					messages: [{ role: 'user', content: promptForAttempt }],
+					modalities: ['image', 'text']
+				})
+			},
+			{ timeoutMs: 60_000, retries: 2, retryDelayMs: 800 }
+		);
+
+		if (openRouterResponseResult.isErr()) {
+			const message = openRouterResponseResult.error;
+			logServer('openrouter:failed', { requestId, attempt: attempt + 1, error: message });
+			if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1) {
+				await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
+				continue;
+			}
+			return err(message);
+		}
+
+		const openRouterResponse = openRouterResponseResult.value;
+		if (!openRouterResponse.ok) {
+			const text = await openRouterResponse.text();
+			logServer('openrouter:error', {
+				requestId,
+				attempt: attempt + 1,
+				status: openRouterResponse.status
+			});
+			if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1 && RETRYABLE_STATUSES.has(openRouterResponse.status)) {
+				await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
+				continue;
+			}
+			return err(`OpenRouter error (${openRouterResponse.status}): ${text}`);
+		}
+
+		const dataResult = await fromPromise(openRouterResponse.json(), (e) =>
+			e instanceof Error ? e.message : 'OpenRouter response parse failed'
+		);
+		if (dataResult.isErr()) {
+			logServer('openrouter:parse_failed', {
+				requestId,
+				attempt: attempt + 1,
+				error: dataResult.error
+			});
+			if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1) {
+				await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
+				continue;
+			}
+			return err(dataResult.error);
+		}
+
+		const openRouterData = dataResult.value as OpenRouterImageResponse;
+		if (openRouterData.error?.message) {
+			const message = openRouterData.error.message;
+			logServer('openrouter:api_error', {
+				requestId,
+				attempt: attempt + 1,
+				code: openRouterData.error.code,
+				message
+			});
+			if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1) {
+				await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
+				continue;
+			}
+			return err(message);
+		}
+
+		const openRouterMessage = openRouterData.choices?.[0]?.message;
+		const imageData =
+			extractImageFromImages(openRouterMessage?.images) ||
+			extractImageUrlFromContent(openRouterMessage?.content);
+		if (!imageData) {
+			const finishReason = openRouterData.choices?.[0]?.finish_reason;
+			logServer('openrouter:missing_image', {
+				requestId,
+				attempt: attempt + 1,
+				finishReason,
+				imageCount: openRouterMessage?.images?.length ?? 0,
+				...contentMeta(openRouterMessage?.content)
+			});
+			if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1) {
+				await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
+				continue;
+			}
+			return err('No image returned from OpenRouter');
+		}
+
+		return ok(imageData);
+	}
+
+	return err('OpenRouter image generation failed');
 }
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -30,29 +353,39 @@ export const POST: RequestHandler = async ({ request }) => {
 		error(400, { message: 'Missing audio file' });
 	}
 
+	const requestId = crypto.randomUUID();
+	logServer('request:start', { requestId, audioType: audioFile.type, audioSize: audioFile.size });
+
 	// 2. Forward to Whisper service
 	const whisperForm = new FormData();
 	whisperForm.append('audio', audioFile);
 
-	const transcriptResult = await fromPromise(
-		fetch(`${WHISPER_BASE_URL}/transcribe`, {
+	const whisperResponseResult = await fetchWithRetry(
+		`${WHISPER_BASE_URL}/transcribe`,
+		{
 			method: 'POST',
 			body: whisperForm
-		}).then(async (res) => {
-			if (!res.ok) {
-				const text = await res.text();
-				throw new Error(`Whisper error: ${text}`);
-			}
-			return res.json() as Promise<{ text: string; language: string }>;
-		}),
-		(e) => (e instanceof Error ? e.message : 'Whisper request failed')
+		},
+		{ timeoutMs: 25_000, retries: 2, retryDelayMs: 500 }
 	);
 
-	if (transcriptResult.isErr()) {
-		error(502, { message: transcriptResult.error });
+	if (whisperResponseResult.isErr()) {
+		logServer('whisper:failed', { requestId, error: whisperResponseResult.error });
+		error(502, { message: whisperResponseResult.error });
 	}
 
-	const { text: transcript } = transcriptResult.value;
+	const whisperResponse = whisperResponseResult.value;
+	if (!whisperResponse.ok) {
+		const text = await whisperResponse.text();
+		logServer('whisper:error', { requestId, status: whisperResponse.status });
+		error(502, { message: `Whisper error (${whisperResponse.status}): ${text}` });
+	}
+
+	const { text: transcript } = (await whisperResponse.json()) as {
+		text: string;
+		language: string;
+	};
+	logServer('whisper:ok', { requestId, transcriptLength: transcript.length });
 
 	// 3. Extract decade from transcript
 	const decadeResult = extractDecade(transcript);
@@ -69,49 +402,47 @@ export const POST: RequestHandler = async ({ request }) => {
 	}
 
 	// OpenRouter requires using chat/completions with modalities for image generation
-	const imageResult = await fromPromise(
-		fetch('https://openrouter.ai/api/v1/chat/completions', {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: `Bearer ${OPENROUTER_API_KEY}`
-			},
-			body: JSON.stringify({
-				model: OPENROUTER_IMAGE_MODEL,
-				messages: [{ role: 'user', content: prompt }],
-				modalities: ['image', 'text']
-			})
-		}).then(async (res) => {
-			if (!res.ok) {
-				const text = await res.text();
-				throw new Error(`OpenRouter error (${res.status}): ${text}`);
-			}
-			return res.json() as Promise<OpenRouterImageResponse>;
-		}),
-		(e) => (e instanceof Error ? e.message : 'Image generation failed')
-	);
-
+	const imageResult = await requestOpenRouterImage(prompt, requestId);
 	if (imageResult.isErr()) {
 		error(502, { message: imageResult.error });
 	}
+	const imageData = imageResult.value;
 
-	const imageData = imageResult.value.choices[0]?.message?.images?.[0]?.image_url?.url;
-	if (!imageData) {
-		error(502, { message: 'No image returned from OpenRouter' });
+	const resolvedImage = await resolveImageData(imageData);
+	if (resolvedImage.isErr()) {
+		logServer('image:resolve_failed', { requestId, error: resolvedImage.error });
+		error(502, { message: resolvedImage.error });
 	}
 
-	// Parse base64 from data URL (format: "data:image/png;base64,...")
-	const [header, base64Data] = imageData.split(',');
-	const mimeMatch = header?.match(/data:([^;]+)/);
-	const mimeType = mimeMatch?.[1] || 'image/png';
+	const { base64Data, mimeType } = resolvedImage.value;
+	logServer('image:resolved', { requestId, mimeType, bytes: base64Data.length });
 
 	// 5. Save image to gallery
 	const galleryDir = join(process.cwd(), 'static', 'gallery');
-	if (!existsSync(galleryDir)) mkdirSync(galleryDir, { recursive: true });
+	const ensureGalleryDir = fromThrowable(
+		() => {
+			if (!existsSync(galleryDir)) mkdirSync(galleryDir, { recursive: true });
+		},
+		(e) => (e instanceof Error ? e.message : 'Failed to create gallery directory')
+	);
+
+	if (ensureGalleryDir().isErr()) {
+		error(500, { message: 'Failed to create gallery directory' });
+	}
 
 	const filename = `${Date.now()}.png`;
 	const filepath = join(galleryDir, filename);
-	writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
+	const saveImage = fromThrowable(
+		() => writeFileSync(filepath, Buffer.from(base64Data, 'base64')),
+		(e) => (e instanceof Error ? e.message : 'Failed to save image')
+	);
+
+	const saveResult = saveImage();
+	if (saveResult.isErr()) {
+		logServer('image:save_failed', { requestId, error: saveResult.error });
+		error(500, { message: saveResult.error });
+	}
+	logServer('request:complete', { requestId, filename });
 
 	// 6. Return result
 	return json({
