@@ -6,6 +6,7 @@ import { buildImagePrompt } from '$lib/prompt';
 import { env } from '$env/dynamic/private';
 import { writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join } from 'path';
+import https from 'node:https';
 
 const WHISPER_BASE_URL = env.WHISPER_BASE_URL || 'http://127.0.0.1:8000';
 const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY;
@@ -14,13 +15,17 @@ const OPENROUTER_IMAGE_FALLBACK_MODEL = env.OPENROUTER_IMAGE_FALLBACK_MODEL;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
 const RETRYABLE_ERROR_MARKERS = ['fetch failed', 'econnreset', 'etimedout', 'enotfound', 'eai_again', 'aborted'];
-const OPENROUTER_IMAGE_ATTEMPTS = boundedInt(env.OPENROUTER_IMAGE_ATTEMPTS, 2, 1, 4);
+const OPENROUTER_IMAGE_ATTEMPTS = boundedInt(env.OPENROUTER_IMAGE_ATTEMPTS, 8, 1, 20);
+const OPENROUTER_FETCH_RETRIES = boundedInt(env.OPENROUTER_FETCH_RETRIES, 5, 0, 10);
+const OPENROUTER_HTTPS_FALLBACK = env.OPENROUTER_HTTPS_FALLBACK !== 'false';
+const OPENROUTER_HTTPS_FALLBACK_RETRIES = boundedInt(env.OPENROUTER_HTTPS_FALLBACK_RETRIES, 1, 0, 5);
 const OPENROUTER_IMAGE_RETRY_DELAY_MS = boundedInt(
 	env.OPENROUTER_IMAGE_RETRY_DELAY_MS,
 	1200,
 	500,
 	5000
 );
+const OPENROUTER_HTTPS_AGENT = new https.Agent({ keepAlive: false, family: 4 });
 
 function boundedInt(value: string | undefined, fallback: number, min: number, max: number) {
 	const parsed = Number.parseInt(value ?? '', 10);
@@ -38,18 +43,105 @@ function isRetryableError(message: string) {
 	return RETRYABLE_ERROR_MARKERS.some((marker) => normalized.includes(marker));
 }
 
+function normalizeOpenRouterError(message: string) {
+	const normalized = message.toLowerCase();
+	if (normalized.includes('econnreset')) {
+		return 'OpenRouter Verbindung wurde zurückgesetzt. Bitte gleich erneut versuchen.';
+	}
+	if (normalized.includes('etimedout') || normalized.includes('timeout')) {
+		return 'OpenRouter hat nicht rechtzeitig geantwortet. Bitte erneut versuchen.';
+	}
+	if (normalized.includes('enotfound') || normalized.includes('eai_again')) {
+		return 'OpenRouter ist gerade nicht erreichbar (DNS). Bitte später erneut versuchen.';
+	}
+	if (normalized.includes('fetch failed')) {
+		return 'OpenRouter Netzwerkfehler. Bitte in einem Moment erneut versuchen.';
+	}
+	return message;
+}
+
 async function sleep(ms: number) {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function fetchWithTimeout(input: RequestInfo, init: RequestInit, timeoutMs: number) {
 	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), timeoutMs);
+	let timedOut = false;
+	const timeout = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, timeoutMs);
 	try {
 		return await fetch(input, { ...init, signal: controller.signal });
+	} catch (error) {
+		const errorName = error instanceof Error ? error.name : 'UnknownError';
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		const errorCause = error instanceof Error ? error.cause : undefined;
+		const causeCode =
+			typeof errorCause === 'object' && errorCause && 'code' in errorCause
+				? String((errorCause as { code?: unknown }).code)
+				: undefined;
+		throw error;
 	} finally {
 		clearTimeout(timeout);
 	}
+}
+
+async function fetchWithHttpsFallback(url: string, init: RequestInit, timeoutMs: number) {
+	const headers = new Headers(init.headers);
+	headers.set('Connection', 'close');
+	const body = typeof init.body === 'string' ? init.body : '';
+	if (body.length > 0 && !headers.has('content-length')) {
+		headers.set('content-length', Buffer.byteLength(body, 'utf8').toString());
+	}
+
+	return fromPromise(
+		new Promise<Response>((resolve, reject) => {
+			const urlObj = new URL(url);
+			const req = https.request(
+				{
+					protocol: urlObj.protocol,
+					hostname: urlObj.hostname,
+					port: urlObj.port || 443,
+					path: `${urlObj.pathname}${urlObj.search}`,
+					method: init.method ?? 'GET',
+					headers: Object.fromEntries(headers.entries()),
+					agent: OPENROUTER_HTTPS_AGENT,
+					family: 4
+				},
+				(res) => {
+					const chunks: Buffer[] = [];
+					res.on('data', (chunk) => {
+						chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+					});
+					res.on('end', () => {
+						const responseBody = Buffer.concat(chunks).toString('utf8');
+						const responseHeaders = new Headers();
+						for (const [key, value] of Object.entries(res.headers)) {
+							if (typeof value === 'string') responseHeaders.set(key, value);
+							else if (Array.isArray(value)) {
+								for (const entry of value) responseHeaders.append(key, entry);
+							}
+						}
+						resolve(
+							new Response(responseBody, {
+								status: res.statusCode ?? 500,
+								headers: responseHeaders
+							})
+						);
+					});
+				}
+			);
+
+			req.setTimeout(timeoutMs, () => {
+				req.destroy(new Error('HTTPS request timeout'));
+			});
+			req.on('error', (err) => reject(err));
+			if (body.length > 0) req.write(body);
+			req.end();
+		}),
+		(e) => (e instanceof Error ? e.message : 'HTTPS request failed')
+	);
 }
 
 async function fetchWithRetry(
@@ -82,7 +174,7 @@ async function fetchWithRetry(
 			continue;
 		}
 
-		return ok(response);
+		return ok<Response, string>(response);
 	}
 
 	return err('Fetch failed');
@@ -243,8 +335,13 @@ async function requestOpenRouterImage(prompt: string, requestId: string) {
 			model,
 			promptLength: promptForAttempt.length
 		});
+		const openRouterBody = JSON.stringify({
+			model,
+			messages: [{ role: 'user', content: promptForAttempt }],
+			modalities: ['image', 'text']
+		});
 
-		const openRouterResponseResult = await fetchWithRetry(
+		let openRouterResponseResult = await fetchWithRetry(
 			OPENROUTER_URL,
 			{
 				method: 'POST',
@@ -252,23 +349,37 @@ async function requestOpenRouterImage(prompt: string, requestId: string) {
 					'Content-Type': 'application/json',
 					Authorization: `Bearer ${OPENROUTER_API_KEY}`
 				},
-				body: JSON.stringify({
-					model,
-					messages: [{ role: 'user', content: promptForAttempt }],
-					modalities: ['image', 'text']
-				})
+				body: openRouterBody
 			},
-			{ timeoutMs: 60_000, retries: 2, retryDelayMs: 800 }
+			{ timeoutMs: 60_000, retries: OPENROUTER_FETCH_RETRIES, retryDelayMs: 800 }
 		);
 
 		if (openRouterResponseResult.isErr()) {
-			const message = openRouterResponseResult.error;
-			logServer('openrouter:failed', { requestId, attempt: attempt + 1, error: message });
-			if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1) {
-				await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
-				continue;
+			if (OPENROUTER_HTTPS_FALLBACK) {
+				for (let fallbackAttempt = 0; fallbackAttempt <= OPENROUTER_HTTPS_FALLBACK_RETRIES; fallbackAttempt += 1) {
+					const fallbackResult = await fetchWithHttpsFallback(OPENROUTER_URL, {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							Authorization: `Bearer ${OPENROUTER_API_KEY}`
+						},
+						body: openRouterBody
+					}, 60_000);
+					if (fallbackResult.isOk()) {
+						openRouterResponseResult = fallbackResult;
+						break;
+					}
+				}
 			}
-			return err(message);
+			if (openRouterResponseResult.isErr()) {
+				const message = normalizeOpenRouterError(openRouterResponseResult.error);
+				logServer('openrouter:failed', { requestId, attempt: attempt + 1, error: message });
+				if (attempt < OPENROUTER_IMAGE_ATTEMPTS - 1) {
+					await sleep(OPENROUTER_IMAGE_RETRY_DELAY_MS * (attempt + 1));
+					continue;
+				}
+				return err(message);
+			}
 		}
 
 		const openRouterResponse = openRouterResponseResult.value;
@@ -324,6 +435,14 @@ async function requestOpenRouterImage(prompt: string, requestId: string) {
 			extractImageUrlFromContent(openRouterMessage?.content);
 		if (!imageData) {
 			const finishReason = openRouterData.choices?.[0]?.finish_reason;
+			const content = openRouterMessage?.content;
+			const contentType = Array.isArray(content)
+				? 'array'
+				: typeof content === 'string'
+					? 'string'
+					: 'missing';
+			const contentLength = typeof content === 'string' ? content.length : undefined;
+			const contentParts = Array.isArray(content) ? content.length : undefined;
 			logServer('openrouter:missing_image', {
 				requestId,
 				attempt: attempt + 1,
@@ -385,7 +504,7 @@ export const POST: RequestHandler = async ({ request }) => {
 		text: string;
 		language: string;
 	};
-	logServer('whisper:ok', { requestId, transcriptLength: transcript.length });
+	logServer('whisper:ok', { requestId, transcriptLength: transcript.length, transcript });
 
 	// 3. Extract decade from transcript
 	const decadeResult = extractDecade(transcript);
