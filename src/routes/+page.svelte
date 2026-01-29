@@ -329,9 +329,11 @@
 {:else}
 	<main class="flex min-h-screen flex-col items-center justify-center px-6 py-12 text-center">
 		<section class="flex w-full max-w-4xl flex-col items-center gap-6">
-			<h1 class="text-4xl font-bold tracking-tight md:text-5xl">Layers of Memory</h1>
+			<h1 class="text-5xl font-medium font-serif tracking-tight md:text-6xl">
+				Layers of Memory
+			</h1>
 			<p class="max-w-4xl text-3xl leading-relaxed opacity-90 md:text-5xl">
-				Share a memory from your past. Tell us the decade, and we'll bring it to life.
+				Teile eine Erinnerung aus deiner Vergangenheit. Nenne uns das Jahrzehnt, und wir erwecken sie zum Leben.
 			</p>
 
 			<button
@@ -343,8 +345,11 @@
 					: 'bg-[--color-coffee] hover:bg-[--color-coffee-light]'}
                    disabled:cursor-not-allowed disabled:opacity-50"
 			>
-				{isRecording ? 'Stop Recording' : 'Start Recording'}
+				{isRecording ? 'Aufnahme stoppen' : 'Aufnahme starten'}
 			</button>
+			<p class="text-xl font-medium opacity-80">
+				Bitte beginne mit diesem Satz: "Ich kann mich erinnern, dass …“
+			</p>
 
 			{#if transcript}
 				<div class="mt-6 w-full max-w-2xl rounded-2xl bg-white/10 p-6">
