@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	type FlowState = 'idle' | 'recording' | 'transcribing' | 'generating' | 'ready' | 'error';
 
@@ -19,6 +19,17 @@
 	let audioChunks: Blob[] = [];
 	let activeRun = $state(0);
 	let runStart = $state(0);
+	let audioStream: MediaStream | null = null;
+	let audioContext: AudioContext | null = null;
+	let analyserNode: AnalyserNode | null = null;
+	let analyserBuffer: Float32Array<ArrayBuffer> | null = null;
+	let vadRafId: number | null = null;
+	let speechStartAt = 0;
+	let lastSpeechAt = 0;
+
+	const VAD_THRESHOLD = 0.08;
+	const VAD_START_HOLD_MS = 250;
+	const VAD_STOP_AFTER_MS = 3000;
 
 	const isRecording = $derived(flowState === 'recording');
 	const isBusy = $derived(flowState === 'transcribing' || flowState === 'generating');
@@ -86,6 +97,84 @@
 		clearShowcaseTimeout();
 	}
 
+	function startVadLoop() {
+		if (vadRafId !== null) return;
+		vadRafId = requestAnimationFrame(vadTick);
+	}
+
+	function stopVadLoop() {
+		if (vadRafId === null) return;
+		cancelAnimationFrame(vadRafId);
+		vadRafId = null;
+	}
+
+	function resetVadTimers() {
+		speechStartAt = 0;
+		lastSpeechAt = 0;
+	}
+
+	function vadTick() {
+		vadRafId = requestAnimationFrame(vadTick);
+		if (!analyserNode || !analyserBuffer) return;
+
+		if (isActionLocked) {
+			speechStartAt = 0;
+			if (!isRecording) lastSpeechAt = 0;
+			return;
+		}
+
+		analyserNode.getFloatTimeDomainData(analyserBuffer);
+		let sumSquares = 0;
+		for (let i = 0; i < analyserBuffer.length; i += 1) {
+			const sample = analyserBuffer[i];
+			sumSquares += sample * sample;
+		}
+		const rms = Math.sqrt(sumSquares / analyserBuffer.length);
+		const now = performance.now();
+
+		if (rms >= VAD_THRESHOLD) {
+			if (!speechStartAt) speechStartAt = now;
+			lastSpeechAt = now;
+			if (!isRecording && now - speechStartAt >= VAD_START_HOLD_MS) {
+				speechStartAt = 0;
+				startRecording();
+			}
+			return;
+		}
+
+		speechStartAt = 0;
+		if (isRecording && lastSpeechAt && now - lastSpeechAt >= VAD_STOP_AFTER_MS) {
+			lastSpeechAt = 0;
+			stopRecording();
+		}
+	}
+
+	async function enableMic() {
+		if (audioStream) {
+			if (audioContext?.state === 'suspended') {
+				await audioContext.resume();
+			}
+			return audioStream;
+		}
+
+		const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		audioStream = stream;
+		audioContext = new AudioContext();
+		const source = audioContext.createMediaStreamSource(stream);
+		analyserNode = audioContext.createAnalyser();
+		analyserNode.fftSize = 2048;
+		analyserNode.smoothingTimeConstant = 0.2;
+		analyserBuffer = new Float32Array(
+			new ArrayBuffer(analyserNode.fftSize * Float32Array.BYTES_PER_ELEMENT)
+		);
+		source.connect(analyserNode);
+		if (audioContext.state === 'suspended') {
+			await audioContext.resume();
+		}
+		startVadLoop();
+		return stream;
+	}
+
 	async function loadGallery() {
 		const res = await fetch('/api/gallery');
 		if (res.ok) galleryImages = await res.json();
@@ -93,6 +182,26 @@
 
 	onMount(() => {
 		loadGallery();
+	});
+
+	onDestroy(() => {
+		stopVadLoop();
+		activeRun = 0;
+		if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+			mediaRecorder.onstop = null;
+			mediaRecorder.stop();
+		}
+		mediaRecorder = null;
+		if (audioStream) {
+			audioStream.getTracks().forEach((t) => t.stop());
+			audioStream = null;
+		}
+		if (audioContext) {
+			audioContext.close();
+			audioContext = null;
+		}
+		analyserNode = null;
+		analyserBuffer = null;
 	});
 
 	async function startRecording() {
@@ -106,7 +215,7 @@
 		runStart = Date.now();
 		logEvent('recording:start');
 		try {
-			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			const stream = await enableMic();
 			mediaRecorder = new MediaRecorder(stream);
 			audioChunks = [];
 
@@ -115,7 +224,6 @@
 			};
 
 			mediaRecorder.onstop = async () => {
-				stream.getTracks().forEach((t) => t.stop());
 				mediaRecorder = null;
 				const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
 				logEvent('recording:stop', { size: audioBlob.size, type: audioBlob.type });
@@ -123,6 +231,7 @@
 			};
 
 			mediaRecorder.start();
+			lastSpeechAt = performance.now();
 		} catch (err) {
 			errorMessage = 'Microphone access denied';
 			userErrorMessage =
@@ -135,8 +244,9 @@
 	}
 
 	function stopRecording() {
-		if (mediaRecorder && isRecording) {
+		if (mediaRecorder && isRecording && mediaRecorder.state !== 'inactive') {
 			flowState = 'transcribing';
+			resetVadTimers();
 			mediaRecorder.stop();
 			logEvent('recording:stop_requested');
 		}
