@@ -27,7 +27,7 @@
 	let speechStartAt = 0;
 	let lastSpeechAt = 0;
 
-	const VAD_THRESHOLD = 0.14;
+	const VAD_THRESHOLD = 0.13;
 	const VAD_START_HOLD_MS = 250;
 	const VAD_STOP_AFTER_MS = 5000;
 
