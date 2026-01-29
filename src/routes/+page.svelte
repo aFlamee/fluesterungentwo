@@ -27,7 +27,7 @@
 	let speechStartAt = 0;
 	let lastSpeechAt = 0;
 
-	const VAD_THRESHOLD = 0.13;
+	const VAD_THRESHOLD = 0.14;
 	const VAD_START_HOLD_MS = 250;
 	const VAD_STOP_AFTER_MS = 5000;
 
@@ -332,8 +332,8 @@
 			<h1 class="text-5xl font-medium font-serif tracking-tight md:text-6xl">
 				Layers of Memory
 			</h1>
-			<p class="max-w-4xl text-3xl leading-relaxed opacity-90 md:text-5xl">
-				Teile eine Erinnerung aus deiner Vergangenheit. Nenne uns das Jahrzehnt, und wir erwecken sie zum Leben.
+			<p class="max-w-4xl text-3xl leading-relaxed opacity-90 md:text-4xl">
+				Teile eine Erinnerung aus deiner Vergangenheit. Nenne uns das Jahr (1940 - 2020), und wir erwecken sie zum Leben.
 			</p>
 
 			<button
@@ -348,7 +348,7 @@
 				{isRecording ? 'Aufnahme stoppen' : 'Aufnahme starten'}
 			</button>
 			<p class="text-xl font-medium opacity-80">
-				Bitte beginne mit diesem Satz: "Ich kann mich daran erinnern, dass …“
+				Bitte beginne mit diesem Satz: "Ich kann mich daran erinnern, dass ich im Jahr …“
 			</p>
 
 			{#if transcript}

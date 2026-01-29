@@ -33,6 +33,17 @@ export function extractDecade(text: string): Result<Decade, string> {
 		}
 	}
 
+	// Tolerantes Parsing: z.B. 19190er, 90er, 90ern, 90s, 1990er, 00er
+	const compact = normalized.replace(/[\s._'-]/g, '');
+	const looseMatch = compact.match(/(\d{2,5})(er|ern|s)\b/);
+	if (looseMatch) {
+		const lastTwo = parseInt(looseMatch[1].slice(-2), 10);
+		const decade = (lastTwo <= 20 ? 2000 + lastTwo : 1900 + lastTwo) as Decade;
+		if (SUPPORTED_DECADES.includes(decade)) {
+			return ok(decade);
+		}
+	}
+
 	// Deutsche Muster: 70er, 80er Jahre
 	const germanMatch = normalized.match(/\b([4-9]0|00|10|20)er\b/);
 	if (germanMatch) {
