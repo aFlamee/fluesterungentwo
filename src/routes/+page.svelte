@@ -27,9 +27,9 @@
 	let speechStartAt = 0;
 	let lastSpeechAt = 0;
 
-	const VAD_THRESHOLD = 0.08;
+	const VAD_THRESHOLD = 0.14;
 	const VAD_START_HOLD_MS = 250;
-	const VAD_STOP_AFTER_MS = 3000;
+	const VAD_STOP_AFTER_MS = 5000;
 
 	const isRecording = $derived(flowState === 'recording');
 	const isBusy = $derived(flowState === 'transcribing' || flowState === 'generating');
@@ -348,7 +348,7 @@
 				{isRecording ? 'Aufnahme stoppen' : 'Aufnahme starten'}
 			</button>
 			<p class="text-xl font-medium opacity-80">
-				Bitte beginne mit diesem Satz: "Ich kann mich erinnern, dass …“
+				Bitte beginne mit diesem Satz: "Ich kann mich daran erinnern, dass …“
 			</p>
 
 			{#if transcript}

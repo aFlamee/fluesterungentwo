@@ -10,7 +10,7 @@ import https from 'node:https';
 
 const WHISPER_BASE_URL = env.WHISPER_BASE_URL || 'http://127.0.0.1:8000';
 const OPENROUTER_API_KEY = env.OPENROUTER_API_KEY;
-const OPENROUTER_IMAGE_MODEL = env.OPENROUTER_IMAGE_MODEL || 'google/gemini-3-pro-image-preview';
+const OPENROUTER_IMAGE_MODEL = env.OPENROUTER_IMAGE_MODEL || 'google/gemini-2.5-flash-image';
 const OPENROUTER_IMAGE_FALLBACK_MODEL = env.OPENROUTER_IMAGE_FALLBACK_MODEL;
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
@@ -338,7 +338,8 @@ async function requestOpenRouterImage(prompt: string, requestId: string) {
 		const openRouterBody = JSON.stringify({
 			model,
 			messages: [{ role: 'user', content: promptForAttempt }],
-			modalities: ['image', 'text']
+			modalities: ['image', 'text'],
+			image_config: { aspect_ratio: '16:9' }
 		});
 
 		let openRouterResponseResult = await fetchWithRetry(
@@ -485,7 +486,7 @@ export const POST: RequestHandler = async ({ request }) => {
 			method: 'POST',
 			body: whisperForm
 		},
-		{ timeoutMs: 25_000, retries: 2, retryDelayMs: 500 }
+		{ timeoutMs: 40_000, retries: 2, retryDelayMs: 500 }
 	);
 
 	if (whisperResponseResult.isErr()) {
